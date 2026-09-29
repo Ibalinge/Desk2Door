@@ -354,12 +354,9 @@
     document.getElementById("zoom-out").addEventListener("click", function () { plans[state.view].zoomBy(1 / 1.15); });
     document.getElementById("zoom-fit").addEventListener("click", function () { plans[state.view].frameAll(false); });
     ["from-input", "to-input"].forEach(function (id) {
-      var input = document.getElementById(id);
-      function expand() {
-        if (document.getElementById("panel").classList.contains("is-collapsed")) setSheet(true);
-      }
-      input.addEventListener("pointerdown", expand);
-      input.addEventListener("focus", expand);
+      document.getElementById(id).addEventListener("focus", function () {
+        if (!mobile.matches && document.getElementById("panel").classList.contains("is-collapsed")) setSheet(true);
+      });
     });
     document.getElementById("sheet-btn").addEventListener("click", function () {
       setSheet(document.getElementById("panel").classList.contains("is-collapsed"));
