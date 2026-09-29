@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#1c1917">
+  <title>Desk2Door — Office walking directions</title>
+  <meta name="application-name" content="Desk2Door">
+  <meta name="apple-mobile-web-app-title" content="Desk2Door">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="city-screen" class="city-screen" aria-labelledby="city-heading">
+    <div class="city-box">
+      <span class="mark" aria-hidden="true">⌖</span>
+      <p class="app-name">Desk2Door</p>
+      <h1 id="city-heading">Find your way in the office</h1>
+      <p>Choose your city to open its floor plans.</p>
+      <label class="city-search">
+        <span class="sr-only">Search city</span>
+        <input id="city-input" type="search" placeholder="Search city" autocomplete="off">
+      </label>
+      <ul id="city-list" class="city-list"></ul>
+      <p class="city-soon">More city offices are coming soon.</p>
+    </div>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" id="floor-mark" aria-hidden="true">2</span>
+        <div>
+          <p class="app-name">Desk2Door</p>
+          <h1 id="floor-title">Floor 2</h1>
+          <button type="button" id="city-btn" class="city-btn">Change city</button>
+        </div>
+      </div>
+      <div class="floor-tabs" id="floor-tabs" role="group" aria-label="Floor"></div>
+      <p id="stats" class="stats">Loading plan…</p>
+    </header>
+    <div class="workspace">
+      <aside class="panel" id="panel">
+        <button type="button" id="sheet-btn" class="sheet-btn" aria-expanded="true" aria-controls="panel">
+          <span class="sheet-grip" aria-hidden="true"></span>
+          <span id="sheet-label">Hide options</span>
+        </button>
+        <p id="banner" class="banner" hidden></p>
+        <div class="field">
+          <label for="from-input">From</label>
+          <div class="combo" id="from-combo">
+            <input id="from-input" type="text" role="combobox" aria-expanded="false" aria-controls="from-list" aria-autocomplete="list" placeholder="Search desk, booth, or room" autocomplete="off" enterkeyhint="search">
+            <ul id="from-list" class="combo-list" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="field">
+          <label for="to-input">To</label>
+          <div class="combo" id="to-combo">
+            <input id="to-input" type="text" role="combobox" aria-expanded="false" aria-controls="to-list" aria-autocomplete="list" placeholder="Search desk, booth, or room" autocomplete="off" enterkeyhint="search">
+            <ul id="to-list" class="combo-list" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" id="swap-btn">Swap</button>
+          <button type="button" id="clear-btn">Clear</button>
+        </div>
+        <section id="route-card" class="route-card" aria-live="polite">
+          <p class="kicker">Route</p>
+          <p id="route-title" class="route-title">Choose a start and a destination.</p>
+          <p id="route-steps" class="route-steps"></p>
+          <p id="route-note" class="route-note">Search both fields, or tap the plan. The first tap sets From. The next sets To.</p>
+          <button type="button" id="floor-go" class="floor-go" hidden></button>
+        </section>
+        <div class="more">
+          <div class="filters">
+            <div class="segment" role="group" aria-label="Place type">
+              <button type="button" data-type="" class="is-on">All</button>
+              <button type="button" data-type="desk">Desks</button>
+              <button type="button" data-type="meeting">Meetings</button>
+              <button type="button" data-type="room">Rooms</button>
+            </div>
+            <label class="wing-filter">
+              <span>Wing</span>
+              <select id="wing-filter">
+                <option value="">Both</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+          </div>
+          <div class="jump">
+            <button type="button" id="here-btn">You are here</button>
+            <div class="segment" role="group" aria-label="Jump to a part of the floor">
+              <button type="button" data-wing="left">Left</button>
+              <button type="button" data-wing="core">Core</button>
+              <button type="button" data-wing="right">Right</button>
+              <button type="button" data-wing="all">Whole floor</button>
+            </div>
+          </div>
+          <label class="check">
+            <input id="walks-toggle" type="checkbox">
+            Show walkways
+          </label>
+          <ul class="legend">
+            <li><i class="swatch desk"></i> Desk</li>
+            <li><i class="swatch meet"></i> Meeting</li>
+            <li><i class="swatch phone"></i> Phone / small</li>
+            <li><i class="swatch service"></i> Service</li>
+            <li><i class="swatch route"></i> Route</li>
+            <li><i class="swatch here"></i> You are here</li>
+          </ul>
+          <p class="note">Routes use only the white walkable space.</p>
+          <p id="check-line" class="check-line"></p>
+        </div>
+      </aside>
+      <main class="stage">
+        <p class="hint">Drag to pan · scroll or pinch to zoom · tap a place</p>
+        <div class="zoom-bar">
+          <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+          <button type="button" id="zoom-fit">Fit</button>
+        </div>
+        <div id="tooltip" class="tooltip" hidden></div>
+      </main>
+    </div>
+  </div>
+  <script src="floorData.js"></script>
+  <script src="pathfinding.js"></script>
+  <script src="floorPlan.js"></script>
+  <script src="controls.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
