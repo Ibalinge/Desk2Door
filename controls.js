@@ -40,9 +40,24 @@
       var active = -1;
       var visible = [];
 
+      var field = input.closest(".field");
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "search-cancel";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("mousedown", function (event) { event.preventDefault(); });
+      cancel.addEventListener("click", function () {
+        close();
+        restore();
+        input.blur();
+      });
+      field.appendChild(cancel);
+
       function close() {
         open = false;
         list.hidden = true;
+        field.classList.remove("is-searching");
+        if (!document.querySelector(".field.is-searching")) document.body.classList.remove("searching");
         input.setAttribute("aria-expanded", "false");
         active = -1;
       }
@@ -58,6 +73,14 @@
         list.style.width = rect.width + "px";
         list.style.top = (rect.bottom + 4) + "px";
         var viewH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        if (field.classList.contains("is-searching")) {
+          var bottom = field.getBoundingClientRect().bottom;
+          list.style.left = "0px";
+          list.style.width = "100%";
+          list.style.top = bottom + "px";
+          list.style.maxHeight = Math.max(120, viewH - bottom) + "px";
+          return;
+        }
         list.style.maxHeight = Math.max(120, Math.min(280, viewH - rect.bottom - 12)) + "px";
       }
 
@@ -113,8 +136,14 @@
         open = true;
         list.hidden = false;
         input.setAttribute("aria-expanded", "true");
+        if (window.matchMedia("(max-width: 860px)").matches) {
+          field.classList.add("is-searching");
+          document.body.classList.add("searching");
+          window.scrollTo(0, 0);
+        }
         place();
         render(query);
+        requestAnimationFrame(place);
       }
 
       function choose(item) {
@@ -134,14 +163,6 @@
       }
 
       input.addEventListener("focus", function () {
-        input.value = "";
-        active = -1;
-        if (window.matchMedia("(max-width: 860px)").matches) input.scrollIntoView({ block: "start" });
-        openList("");
-      });
-
-      input.addEventListener("pointerdown", function () {
-        if (document.activeElement === input) return;
         input.value = "";
         active = -1;
         openList("");
