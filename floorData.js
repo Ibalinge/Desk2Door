@@ -151,7 +151,7 @@
         (pod.ids[c] || []).forEach(function (num, r) {
           if (num == null) return;
           var row = pod.rows[r];
-          var id = pod.series + "." + pad(num);
+          var id = typeof num === "string" ? num : pod.series + "." + pad(num);
           rooms.push({
             id: id, label: id, type: pod.type || "desk", wing: pod.wing, series: pod.series,
             x: col[0], y: row[0], w: col[1] - col[0], h: row[1] - row[0],
@@ -178,8 +178,9 @@
         series: r[0], floor: cfg.level,
         x: r[1], y: r[2], w: r[3] - r[1], h: r[4] - r[2],
         doorSpecs: r[5].split("|").map(function (s) {
-          var parts = s.split(":");
-          return { side: parts[0], at: parts.length > 1 ? parseFloat(parts[1]) : 0.5 };
+          var host = s.split(">");
+          var parts = host[0].split(":");
+          return { side: parts[0], at: parts.length > 1 ? parseFloat(parts[1]) : 0.5, via: host[1] || null };
         }),
         accent: null
       });
@@ -382,9 +383,26 @@
       return best;
     }
 
+    /* A door with a host room ("N:0.2>202") opens into that room; routes pass through the host's own door. */
+    var hostOf = {};
+    rooms.forEach(function (room) { hostOf[room.id] = room; });
+    rooms.sort(function (a, c) {
+      return (a.doorSpecs.some(function (s) { return s.via; }) ? 1 : 0) - (c.doorSpecs.some(function (s) { return s.via; }) ? 1 : 0);
+    });
     rooms.forEach(function (room) {
       room.doors = [];
       room.doorSpecs.forEach(function (spec) {
+        if (spec.via) {
+          var host = hostOf[spec.via];
+          if (!host || !host.doors || !host.doors.length || !host.doors[0].node) {
+            errors.push("Door " + spec.side + " of " + room.id + " opens into unknown room " + spec.via);
+            return;
+          }
+          host.doors.forEach(function (hd) {
+            room.doors.push({ node: hd.node, point: sidePoint(room, spec.side, spec.at), side: spec.side, via: hd.point, host: host.id });
+          });
+          return;
+        }
         var door = findDoor(room, spec);
         if (!door && spec.side !== "A") {
           errors.push("Door " + spec.side + " of " + room.id + " opens onto no walkway");
@@ -517,12 +535,15 @@
       var f = floorsByNo[no];
       f.buildingId = building;
       f.floorNo = Number(no);
+      f.floor = f.floor.replace(/Floor \d+$/, "Floor " + no);
       f.directory.forEach(function (d) { d.hay = d.hay.replace(/floor \d+$/, "floor " + no) + " building " + building; });
       c.floors[f.level] = f;
       c.testPairs[f.level] = testPairs ? testPairs[no] : undefined;
       levels.push(f.level);
     });
-    c.buildings.push({ id: building, name: "Building " + building, levels: levels });
+    var entry = c.buildings.filter(function (b) { return b.id === building; })[0];
+    if (entry) entry.levels = entry.levels.concat(levels);
+    else c.buildings.push({ id: building, name: "Building " + building, levels: levels });
     if (c.defaultFloor == null) c.defaultFloor = levels[0];
     c.note = "USA · " + c.buildings.map(function (b) { return b.id; }).join(", ");
   };

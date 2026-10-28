@@ -176,7 +176,7 @@
           var path = s == null || t == null ? null : astar(s, t);
           if (!path) return;
           var raw = path.map(function (k) { return { x: xs[k], y: ys[k] }; });
-          var pts = [da.point].concat(smooth(raw), [db.point]);
+          var pts = [da.point].concat(da.via ? [da.via] : [], smooth(raw), db.via ? [db.via] : [], [db.point]);
           var d = length(pts);
           if (!best || d < best.distance) best = { path: path, points: pts, distance: d };
         });
@@ -233,10 +233,13 @@
       if (!hasNode(a, forward.nodeIds[0]) || !hasNode(b, forward.nodeIds[forward.nodeIds.length - 1])) {
         failures.push("Route " + pair.join(" → ") + " does not use the door nodes");
       }
+      var vias = (a.doors || []).concat(b.doors || []).map(function (d) { return d.via; }).filter(Boolean);
+      var isVia = function (pt) { return vias.some(function (v) { return v.x === pt.x && v.y === pt.y; }); };
       var k;
       for (k = 1; k < forward.points.length; k++) {
         var p = forward.points[k - 1];
         var q = forward.points[k];
+        if ((k === 1 || k === forward.points.length - 1) && (isVia(p) || isVia(q))) continue;
         if (!floor.lineClear(p.x, p.y, q.x, q.y, 0)) {
           failures.push("Route " + pair.join(" → ") + " crosses a desk, room, or wall");
           break;
