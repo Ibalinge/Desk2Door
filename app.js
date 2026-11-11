@@ -50,6 +50,8 @@
     var list = document.getElementById("city-list");
     setCityScreenMode(chosen);
     list.replaceChildren();
+    /* The list is replaced under the pointer; a double tap must not pick the first building. */
+    var shownAt = Date.now();
     chosen.buildings.forEach(function (b) {
       var li = document.createElement("li");
       var button = document.createElement("button");
@@ -61,7 +63,10 @@
       meta.textContent = chosen.name + " · " + (b.levels.length === 1 ? "1 floor" : b.levels.length + " floors");
       button.appendChild(name);
       button.appendChild(meta);
-      button.addEventListener("click", function () { pickBuilding(chosen, b); });
+      button.addEventListener("click", function () {
+        if (Date.now() - shownAt < 450) return;
+        pickBuilding(chosen, b);
+      });
       li.appendChild(button);
       list.appendChild(li);
     });

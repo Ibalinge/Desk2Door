@@ -254,6 +254,11 @@
           ctx.fillRect(item.x, item.y, item.w, item.h);
           return;
         }
+        if (item.type === "blocked") {
+          ctx.fillStyle = "#1c1917";
+          ctx.fillRect(item.x, item.y, item.w, item.h);
+          return;
+        }
         if (item.type === "void" || item.type === "wall") {
           ctx.fillStyle = "#d6d3d1";
           ctx.fillRect(item.x, item.y, item.w, item.h);
