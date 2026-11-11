@@ -235,7 +235,7 @@
       ctx.font = "600 " + (10 / scale) + "px " + FONT;
       ctx.fillStyle = "#78716c";
       floor.fixtures.forEach(function (item) {
-        if (item.type !== "zone" || !item.label) return;
+        if (item.type !== "zone" || !item.label || item.place) return;
         ctx.fillText(item.label.toUpperCase(), item.x + item.w / 2, item.y + 10 / scale + 4);
       });
     }
@@ -375,6 +375,12 @@
       drawZoneLabels();
 
       floor.rooms.forEach(function (room) {
+        if (room.open) {
+          if (room.id !== fromId && room.id !== toId) return;
+          ctx.fillStyle = roomFill(room);
+          ctx.fillRect(room.x, room.y, room.w, room.h);
+          return;
+        }
         var radius = room.type === "desk" ? 2 : 5;
         ctx.fillStyle = roomFill(room);
         ctx.strokeStyle = roomStroke(room);
@@ -449,6 +455,7 @@
         var c = worldToScreen(room.x + room.w / 2, room.y + room.h / 2);
         var sw = room.w * scale;
         var sh = room.h * scale;
+        if (room.open) return;
         if (c.x < -30 || c.x > viewW + 30 || c.y < -20 || c.y > viewH + 20) return;
         if (room.type === "desk" || room.series === "263") {
           if (!showNumbers) return;

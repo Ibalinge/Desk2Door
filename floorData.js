@@ -188,11 +188,14 @@
 
     cfg.fixtures.forEach(function (f, i) {
       fixtures.push({ id: f[6] || "fx" + i, type: f[0], label: f[5] || "", x: f[1], y: f[2], w: f[3] - f[1], h: f[4] - f[2],
-        poly: f[7] || null });
+        poly: f[7] || null, place: f[8] || null, walk: f[9] === "walk" });
     });
 
     /* Zones are shaded open areas (open collaboration, cafe floor); people walk through them. */
-    var solid = fixtures.filter(function (f) { return f.type !== "zone" && f.type !== "door"; });
+    var solid = fixtures.filter(function (f) {
+      if (f.type === "zone") return !!(cfg.solidZones && f.place && !f.walk);
+      return f.type !== "door";
+    });
     var added = closeGaps(rooms, solid, cfg.openGaps || [], cfg.midBand === undefined ? [320, 470] : cfg.midBand);
     fixtures = fixtures.concat(added);
     var obstacles = rooms.concat(solid, added);
@@ -212,13 +215,25 @@
     function pointClear(x, y, inflate) {
       if (x <= BUILDING.x + 1 || x >= BUILDING.x + BUILDING.w - 1) return false;
       if (y <= BUILDING.y + 1 || y >= BUILDING.y + BUILDING.h - 1) return false;
+      if (OUTLINE && !inOutline(x, y)) return false;
       var list = buckets[Math.floor((x - BUILDING.x) / BUCKET)] || [];
       var i;
       for (i = 0; i < list.length; i++) {
         var o = list[i];
-        if (x > o.x - inflate && x < o.x + o.w + inflate && y > o.y - inflate && y < o.y + o.h + inflate) return false;
+        if (x > o.x - inflate && x < o.x + o.w + inflate && y > o.y - inflate && y < o.y + o.h + inflate) {
+          if (!o.poly || inPoly(o.poly, x, y)) return false;
+        }
       }
       return true;
+    }
+
+    function inPoly(poly, x, y) {
+      var inside = false;
+      for (var a = 0, b = poly.length - 1; a < poly.length; b = a++) {
+        var xa = poly[a][0], ya = poly[a][1], xb = poly[b][0], yb = poly[b][1];
+        if ((ya > y) !== (yb > y) && x < (xb - xa) * (y - ya) / (yb - ya) + xa) inside = !inside;
+      }
+      return inside;
     }
 
     function lineClear(ax, ay, bx, by, inflate) {
@@ -347,14 +362,15 @@
     /* Attach every room to the corridor through one door node. */
     var sidePoint = doorPoint;
 
-    function nearestNode(p) {
+    function nearestNode(p, reach) {
       var pi = Math.round((p.x - BUILDING.x - GRID / 2) / GRID);
       var pj = Math.round((p.y - BUILDING.y - GRID / 2) / GRID);
       var cand = [];
       var di;
       var dj;
-      for (dj = -8; dj <= 8; dj++) {
-        for (di = -8; di <= 8; di++) {
+      var r = reach || 8;
+      for (dj = -r; dj <= r; dj++) {
+        for (di = -r; di <= r; di++) {
           var ii = pi + di;
           var jj = pj + dj;
           if (!isMain(ii, jj)) continue;
@@ -364,6 +380,7 @@
         }
       }
       cand.sort(function (a, c) { return a.d - c.d; });
+      if (reach) return cand[0] || null;
       var q;
       for (q = 0; q < cand.length; q++) {
         if (lineClear(p.x, p.y, cand[q].x, cand[q].y, 0)) return cand[q];
@@ -383,6 +400,20 @@
       return best;
     }
 
+    /* Zones marked as places (fixture slot 8) are open areas people can pick as a start or destination.
+       The route ends at the walkable point nearest the zone's centre; with solidZones it stops at the edge. */
+    fixtures.forEach(function (f) {
+      if (f.type !== "zone" || !f.place || !f.label) return;
+      var at = f.place.length ? { x: f.place[0], y: f.place[1] } : { x: f.x + f.w / 2, y: f.y + f.h / 2 };
+      var hit = nearestNode(at, cfg.solidZones && !f.walk ? 80 : 0);
+      rooms.push({
+        id: f.label, label: (cfg.labels || {})[f.label] || f.label, type: "meeting", open: true,
+        wing: (f.x + f.w / 2) < (cfg.wingSplit || 1090) ? "left" : "right", series: f.label, floor: cfg.level,
+        x: f.x, y: f.y, w: f.w, h: f.h, doorSpecs: [], accent: null,
+        doors: hit ? [{ node: "n" + hit.node, point: { x: hit.x, y: hit.y }, side: "N" }] : []
+      });
+    });
+
     /* A door with a host room ("N:0.2>202") opens into that room; routes pass through the host's own door. */
     var hostOf = {};
     rooms.forEach(function (room) { hostOf[room.id] = room; });
@@ -390,7 +421,7 @@
       return (a.doorSpecs.some(function (s) { return s.via; }) ? 1 : 0) - (c.doorSpecs.some(function (s) { return s.via; }) ? 1 : 0);
     });
     rooms.forEach(function (room) {
-      room.doors = [];
+      if (!room.open) room.doors = [];
       room.doorSpecs.forEach(function (spec) {
         if (spec.via) {
           var host = hostOf[spec.via];
@@ -452,8 +483,9 @@
     var a;
     for (a = 0; a < rooms.length && errors.length < 40; a++) {
       var c;
+      if (rooms[a].open) continue;
       for (c = a + 1; c < rooms.length; c++) {
-        if (overlap(rooms[a], rooms[c])) errors.push("Overlap " + rooms[a].id + " and " + rooms[c].id);
+        if (!rooms[c].open && overlap(rooms[a], rooms[c])) errors.push("Overlap " + rooms[a].id + " and " + rooms[c].id);
       }
       for (c = 0; c < fixtures.length; c++) {
         if (fixtures[c].type !== "zone" && fixtures[c].type !== "door" && overlap(rooms[a], fixtures[c])) errors.push("Overlap " + rooms[a].id + " and core " + (fixtures[c].label || "wall"));

@@ -32,8 +32,7 @@
   function tabName(level) {
     var f = floors[level];
     if (!f || !f.buildingId) return "Floor " + level;
-    var count = city.buildings.filter(function (b) { return b.id === f.buildingId; })[0].levels.length;
-    return "Bldg " + f.buildingId + (count > 1 ? " · F" + f.floorNo : "");
+    return "Floor " + f.floorNo;
   }
 
   function setCityScreenMode(buildingCity) {
@@ -191,8 +190,11 @@
   function setView(level) {
     state.view = level;
     levels.forEach(function (l) { canvases[l].hidden = l !== level; });
+    var building = floors[level].buildingId;
     document.querySelectorAll("#floor-tabs button").forEach(function (button) {
-      button.classList.toggle("is-on", Number(button.getAttribute("data-floor")) === level);
+      var at = Number(button.getAttribute("data-floor"));
+      button.hidden = floors[at].buildingId !== building;
+      button.classList.toggle("is-on", at === level);
     });
     document.getElementById("floor-mark").textContent = String(floors[level].floorNo || level);
     document.getElementById("floor-title").textContent = city.name + " · " + placeName(level);
