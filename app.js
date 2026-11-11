@@ -176,6 +176,7 @@
       }
       return { status: "floors", from: a, to: b };
     }
+    if (!routers[a.floor]) routers[a.floor] = Pathfinding.create(floors[a.floor]);
     return routers[a.floor].route(a, b);
   }
 
@@ -192,8 +193,40 @@
     if (plans[state.view]) plans[state.view].resize();
   }
 
+  function applySelection(level) {
+    var from = room(state.fromId);
+    var to = room(state.toId);
+    plans[level].setSelection(from && from.floor === level ? from.id : null, to && to.floor === level ? to.id : null);
+    var ok = state.route && state.route.status === "ok" && state.route.from.floor === level;
+    plans[level].setRoute(ok ? state.route : null);
+  }
+
+  function ensurePlan(level) {
+    if (plans[level]) return;
+    plans[level] = FloorPlan.create(canvases[level], floors[level], { onPick: onPick, onHover: showTooltip });
+    if (state.walks !== undefined) plans[level].setShowWalks(state.walks);
+    applySelection(level);
+    setTimeout(function () { checkFloor(level); }, 0);
+  }
+
+  var idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 50); };
+  var warmQueue = [];
+  function warmNext() {
+    var level = warmQueue.shift();
+    if (level === undefined) return;
+    if (floors[level].ensure) floors[level].ensure();
+    idle(warmNext);
+  }
+  function warmBuilding(level) {
+    var building = floors[level].buildingId;
+    var start = !warmQueue.length;
+    warmQueue = levels.filter(function (l) { return l !== level && floors[l].buildingId === building; });
+    if (start) idle(warmNext);
+  }
+
   function setView(level) {
     state.view = level;
+    ensurePlan(level);
     levels.forEach(function (l) { canvases[l].hidden = l !== level; });
     var building = floors[level].buildingId;
     document.querySelectorAll("#floor-tabs button").forEach(function (button) {
@@ -208,17 +241,14 @@
     document.getElementById("stats").textContent = counts.desks + " desks · " +
       counts.meetings + " meetings · " + counts.small + " small rooms";
     resizeView();
+    warmBuilding(level);
   }
 
   function publish(frame) {
     state.route = compute();
     var from = room(state.fromId);
     var to = room(state.toId);
-    levels.forEach(function (level) {
-      plans[level].setSelection(from && from.floor === level ? from.id : null, to && to.floor === level ? to.id : null);
-      var ok = state.route.status === "ok" && state.route.from.floor === level;
-      plans[level].setRoute(ok ? state.route : null);
-    });
+    Object.keys(plans).forEach(function (level) { applySelection(Number(level)); });
     if (from && from.floor !== state.view) setView(from.floor);
     else if (!from && to && to.floor !== state.view) setView(to.floor);
     controls.sync(state);
@@ -297,19 +327,22 @@
     if (to && room(to)) state.toId = to;
   }
 
+  var checkMessages = [];
+  function checkFloor(level) {
+    var floor = floors[level];
+    var label = placeName(level) + ": ";
+    floor.validation.errors.forEach(function (e) { checkMessages.push(label + e); });
+    var pairs = city.testPairs ? city.testPairs[level] : null;
+    if (pairs !== undefined || !city.testPairs) {
+      Pathfinding.selfTest(floor, pairs || null).failures.forEach(function (e) { checkMessages.push(label + e); });
+    }
+    showChecks();
+  }
+
   function showChecks() {
     var banner = document.getElementById("banner");
     var line = document.getElementById("check-line");
-    var messages = [];
-    levels.forEach(function (level) {
-      var floor = floors[level];
-      var label = placeName(level) + ": ";
-      floor.validation.errors.forEach(function (e) { messages.push(label + e); });
-      var pairs = city.testPairs ? city.testPairs[level] : null;
-      if (pairs !== undefined || !city.testPairs) {
-        Pathfinding.selfTest(floor, pairs || null).failures.forEach(function (e) { messages.push(label + e); });
-      }
-    });
+    var messages = checkMessages;
     if (messages.length) {
       banner.hidden = false;
       banner.textContent = messages.slice(0, 8).join("\n");
@@ -354,7 +387,7 @@
     levels = Object.keys(floors).map(Number).sort(function (a, b) { return a - b; });
     state.view = startLevel && floors[startLevel] ? startLevel :
       city.defaultFloor && floors[city.defaultFloor] ? city.defaultFloor : levels[0];
-    levels.forEach(function (level) { routers[level] = Pathfinding.create(floors[level]); });
+    routers = {};
 
     var typeRank = { meeting: 0, service: 1, phone: 2, desk: 3 };
     var directory = levels.reduce(function (all, level) { return all.concat(floors[level].directory); }, []);
@@ -398,7 +431,8 @@
         plans[here.floor].frameRoom(here.id);
       },
       onWalks: function (on) {
-        levels.forEach(function (level) { plans[level].setShowWalks(on); });
+        state.walks = on;
+        Object.keys(plans).forEach(function (level) { plans[level].setShowWalks(on); });
       },
       onWing: function (wing) {
         var plan = plans[state.view];
@@ -419,7 +453,6 @@
       stage.insertBefore(canvas, hint);
       canvases[level] = canvas;
       canvas.hidden = level !== state.view;
-      plans[level] = FloorPlan.create(canvas, floors[level], { onPick: onPick, onHover: showTooltip });
 
       var button = document.createElement("button");
       button.type = "button";
@@ -432,7 +465,6 @@
       tabs.appendChild(button);
     });
 
-    showChecks();
     setView(state.view);
 
     document.getElementById("zoom-in").addEventListener("click", function () { plans[state.view].zoomBy(1.15); });

@@ -110,31 +110,30 @@
           }
           continue;
         }
-        if (anyDoorFaces(a, b) || anyDoorFaces(b, a)) continue;
         var oy0 = Math.max(a.y, b.y);
         var oy1 = Math.min(a.y + a.h, b.y + b.h);
         var ox0 = Math.max(a.x, b.x);
         var ox1 = Math.min(a.x + a.w, b.x + b.w);
+        var wall = null;
         if (oy1 - oy0 > 0) {
           var left = a.x < b.x ? a : b;
           var right = left === a ? b : a;
           var gx = right.x - (left.x + left.w);
-          if (gx > 0 && gx < MAX_GAP) walls.push({ type: "wall", label: "", x: left.x + left.w, y: oy0, w: gx, h: oy1 - oy0 });
+          if (gx > 0 && gx < MAX_GAP) wall = { type: "wall", label: "", x: left.x + left.w, y: oy0, w: gx, h: oy1 - oy0 };
         } else if (ox1 - ox0 > 0) {
           var upper = a.y < b.y ? a : b;
           var lower = upper === a ? b : a;
           var gy = lower.y - (upper.y + upper.h);
-          if (gy > 0 && gy < MAX_GAP) walls.push({ type: "wall", label: "", x: ox0, y: upper.y + upper.h, w: ox1 - ox0, h: gy });
+          if (gy > 0 && gy < MAX_GAP) wall = { type: "wall", label: "", x: ox0, y: upper.y + upper.h, w: ox1 - ox0, h: gy };
         }
+        if (wall && !anyDoorFaces(a, b) && !anyDoorFaces(b, a)) walls.push(wall);
       }
     }
     walls.forEach(function (w, k) { w.id = "wall" + k; });
     return walls;
   }
 
-  function buildFloor(cfg) {
-    var BUILDING = cfg.building;
-    var errors = [];
+  function baseItems(cfg) {
     var rooms = [];
     var groups = [];
     var fixtures = [];
@@ -190,6 +189,74 @@
       fixtures.push({ id: f[6] || "fx" + i, type: f[0], label: f[5] || "", x: f[1], y: f[2], w: f[3] - f[1], h: f[4] - f[2],
         poly: f[7] || null, place: f[8] || null, walk: f[9] === "walk" });
     });
+    return { rooms: rooms, groups: groups, fixtures: fixtures };
+  }
+
+  function zoneRoom(f, cfg) {
+    return {
+      id: f.label, label: (cfg.labels || {})[f.label] || f.label, type: "meeting", open: true,
+      wing: (f.x + f.w / 2) < (cfg.wingSplit || 1090) ? "left" : "right", series: f.label, floor: cfg.level,
+      x: f.x, y: f.y, w: f.w, h: f.h, doorSpecs: [], accent: null
+    };
+  }
+
+  function makeDirectory(rooms, cfg) {
+    var typeRank = { meeting: 0, service: 1, phone: 2, desk: 3 };
+    return rooms.map(function (r) {
+      return {
+        id: r.id, key: cfg.level + ":" + r.id, floor: cfg.level, label: r.label, type: r.type, wing: r.wing, series: r.series,
+        youAreHere: r.id === cfg.youAreHere,
+        hay: (r.label + " " + (/\d[IO]\b/.test(r.id) ? r.id.replace(/I\b/, "1").replace(/O\b/, "0") + " " : "") +
+          r.type + " " + r.wing + " " + r.series + " floor " + cfg.level).toLowerCase()
+      };
+    }).sort(function (p, q) {
+      if (typeRank[p.type] !== typeRank[q.type]) return typeRank[p.type] - typeRank[q.type];
+      return p.label.localeCompare(q.label, "en", { numeric: true, sensitivity: "base" });
+    });
+  }
+
+  /* The walkable grid takes up to a second per floor, so it is built the first time
+     any geometry property is read; the directory is ready at once for search. */
+  var LAZY_KEYS = ["width", "height", "building", "plate", "metersPerUnit", "youAreHere", "rooms", "roomById",
+    "corridorNodes", "corridorEdges", "fixtures", "groups", "grid", "lineClear", "regions", "validation"];
+  function buildFloor(cfg) {
+    var base = baseItems(cfg);
+    var listed = base.rooms.concat(base.fixtures.filter(function (f) {
+      return f.type === "zone" && f.place && f.label;
+    }).map(function (f) { return zoneRoom(f, cfg); }));
+    var floor = {
+      floor: (cfg.cityName || "Office") + " – Floor " + cfg.level,
+      level: cfg.level,
+      checked: !!cfg.inventory,
+      directory: makeDirectory(listed, cfg)
+    };
+    var built = false;
+    function fill() {
+      if (built) return;
+      built = true;
+      var full = buildFull(cfg);
+      LAZY_KEYS.forEach(function (k) {
+        Object.defineProperty(floor, k, { value: full[k], writable: true, enumerable: true, configurable: true });
+      });
+    }
+    LAZY_KEYS.forEach(function (k) {
+      Object.defineProperty(floor, k, {
+        get: function () { fill(); return floor[k]; },
+        set: function (v) { fill(); floor[k] = v; },
+        enumerable: true, configurable: true
+      });
+    });
+    floor.ensure = fill;
+    return floor;
+  }
+
+  function buildFull(cfg) {
+    var BUILDING = cfg.building;
+    var errors = [];
+    var base = baseItems(cfg);
+    var rooms = base.rooms;
+    var groups = base.groups;
+    var fixtures = base.fixtures;
 
     /* Zones are shaded open areas (open collaboration, cafe floor); people walk through them. */
     var solid = fixtures.filter(function (f) {
@@ -264,16 +331,33 @@
       }
       return inside;
     }
+    /* Outline crossings for one horizontal line; a point is inside when an odd number lie to its right. */
+    function crossings(y) {
+      var xs = [];
+      for (var a = 0, b = OUTLINE.length - 1; a < OUTLINE.length; b = a++) {
+        var xa = OUTLINE[a][0], ya = OUTLINE[a][1], xb = OUTLINE[b][0], yb = OUTLINE[b][1];
+        if ((ya > y) !== (yb > y)) xs.push((xb - xa) * (y - ya) / (yb - ya) + xa);
+      }
+      return xs;
+    }
+    function insideRow(xs, x) {
+      var n = 0;
+      for (var q = 0; q < xs.length; q++) if (x < xs[q]) n++;
+      return (n & 1) === 1;
+    }
     var i;
     var j;
     for (j = 0; j < rows; j++) {
+      var py = cy(j);
+      var rowMid = OUTLINE ? crossings(py) : null;
+      var rowUp = OUTLINE ? crossings(py - WALL_CLEAR) : null;
+      var rowDown = OUTLINE ? crossings(py + WALL_CLEAR) : null;
       for (i = 0; i < cols; i++) {
         var px = cx(i);
-        var py = cy(j);
         if (px < BUILDING.x + WALL_CLEAR || px > BUILDING.x + BUILDING.w - WALL_CLEAR ||
             py < BUILDING.y + WALL_CLEAR || py > BUILDING.y + BUILDING.h - WALL_CLEAR) blocked[j * cols + i] = 1;
-        else if (OUTLINE && !(inOutline(px - WALL_CLEAR, py) && inOutline(px + WALL_CLEAR, py) &&
-            inOutline(px, py - WALL_CLEAR) && inOutline(px, py + WALL_CLEAR))) blocked[j * cols + i] = 1;
+        else if (OUTLINE && !(insideRow(rowMid, px - WALL_CLEAR) && insideRow(rowMid, px + WALL_CLEAR) &&
+            insideRow(rowUp, px) && insideRow(rowDown, px))) blocked[j * cols + i] = 1;
       }
     }
     obstacles.forEach(function (o) {
@@ -406,12 +490,9 @@
       if (f.type !== "zone" || !f.place || !f.label) return;
       var at = f.place.length ? { x: f.place[0], y: f.place[1] } : { x: f.x + f.w / 2, y: f.y + f.h / 2 };
       var hit = nearestNode(at, cfg.solidZones && !f.walk ? 80 : 0);
-      rooms.push({
-        id: f.label, label: (cfg.labels || {})[f.label] || f.label, type: "meeting", open: true,
-        wing: (f.x + f.w / 2) < (cfg.wingSplit || 1090) ? "left" : "right", series: f.label, floor: cfg.level,
-        x: f.x, y: f.y, w: f.w, h: f.h, doorSpecs: [], accent: null,
-        doors: hit ? [{ node: "n" + hit.node, point: { x: hit.x, y: hit.y }, side: "N" }] : []
-      });
+      var zr = zoneRoom(f, cfg);
+      zr.doors = hit ? [{ node: "n" + hit.node, point: { x: hit.x, y: hit.y }, side: "N" }] : [];
+      rooms.push(zr);
     });
 
     /* A door with a host room ("N:0.2>202") opens into that room; routes pass through the host's own door. */
@@ -495,19 +576,6 @@
     var roomById = {};
     rooms.forEach(function (r) { roomById[r.id] = r; });
 
-    var typeRank = { meeting: 0, service: 1, phone: 2, desk: 3 };
-    var directory = rooms.map(function (r) {
-      return {
-        id: r.id, key: r.key, floor: cfg.level, label: r.label, type: r.type, wing: r.wing, series: r.series,
-        youAreHere: r.youAreHere,
-        hay: (r.label + " " + (/\d[IO]\b/.test(r.id) ? r.id.replace(/I\b/, "1").replace(/O\b/, "0") + " " : "") +
-          r.type + " " + r.wing + " " + r.series + " floor " + cfg.level).toLowerCase()
-      };
-    }).sort(function (p, q) {
-      if (typeRank[p.type] !== typeRank[q.type]) return typeRank[p.type] - typeRank[q.type];
-      return p.label.localeCompare(q.label, "en", { numeric: true, sensitivity: "base" });
-    });
-
     var counts = {
       desks: byType.desk.length,
       meetings: byType.meeting.length,
@@ -543,7 +611,6 @@
         core: { id: "core", label: "Core", x: 1040, y: top, w: 455, h: height },
         right: { id: "right", label: "Right wing", x: 1495, y: top, w: BUILDING.x + BUILDING.w - 1495, h: height }
       },
-      directory: directory,
       validation: {
         ok: errors.length === 0,
         errors: errors.slice(0, 30),
