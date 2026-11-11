@@ -500,7 +500,8 @@
       return {
         id: r.id, key: r.key, floor: cfg.level, label: r.label, type: r.type, wing: r.wing, series: r.series,
         youAreHere: r.youAreHere,
-        hay: (r.label + " " + r.type + " " + r.wing + " " + r.series + " floor " + cfg.level).toLowerCase()
+        hay: (r.label + " " + (/\d[IO]\b/.test(r.id) ? r.id.replace(/I\b/, "1").replace(/O\b/, "0") + " " : "") +
+          r.type + " " + r.wing + " " + r.series + " floor " + cfg.level).toLowerCase()
       };
     }).sort(function (p, q) {
       if (typeRank[p.type] !== typeRank[q.type]) return typeRank[p.type] - typeRank[q.type];
